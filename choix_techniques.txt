@@ -1,0 +1,3 @@
+Classe Request pas abstraite pour être utilisée pour les requêtes invalides.
+On renvoie un pointeur vers une requête dans RequestFactory::parseRequest car on crée une nouvelle requête avec "new", qui sera supprimée à la fin.
+
