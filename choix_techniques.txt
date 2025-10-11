@@ -1,3 +1,10 @@
 Classe Request pas abstraite pour être utilisée pour les requêtes invalides.
 On renvoie un pointeur vers une requête dans RequestFactory::parseRequest car on crée une nouvelle requête avec "new", qui sera supprimée à la fin.
+On delete les requêtes après les avoir traitées dans Server.cpp.
 
+Les messages et les utilisateurs sont codés en dur.
+
+Ajout de la commande TOP car elle est considérée comme obligatoire dans la RFC 1939
+Commandes optionnelles ajoutées : RSET, UIDL
+
+Utilisation de l'état STOPPED pour l'attente du mot de passe utilisateur avec PASS. Authorise seulement PASS et QUIT.
