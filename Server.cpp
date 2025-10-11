@@ -1,14 +1,39 @@
 #include <iostream>
-#include "asio.hpp"
-#include "Server.h"
 
+#include "asio.hpp"
+
+#include "Server.h"
+#include "Message.h"
+#include "BoiteAuxLettres.h"
+
+#include "Request.h"
+#include "RequestQuit.h"
+#include "RequestDele.h"
+#include "RequestUser.h"
+#include "RequestPass.h"
+#include "RequestStat.h"
+#include "RequestList.h"
+#include "RequestRetr.h"
+#include "RequestNoop.h"
+#include "RequestRst.h"
+#include "RequestUidl.h"
+#include "RequestTop.h"
+
+#include "RequestFactory.h"
+
+#include "Response.h"
+
+//namespace centralesupelec::tp2
+//{
 namespace ip = asio::ip;
+
 
 // On crée l'instance du Serveur avec un objet ASIO context qui sert à
 // orchestrer tous les objets et événements gérés par ASIO (connexions réseau,
 // timers, etc.)
-Server::Server(asio::io_context& ioContext) :
+Server::Server(asio::io_context& ioContext, BoiteAuxLettres b) :
 	m_io{ioContext},
+	boiteAuxLettres{b},
 	// On crée la socket sur laquelle on écoutera
 	m_acceptor{ioContext, ip::tcp::endpoint{ip::tcp::v4(), ECHO_PORT}}
 {}
@@ -36,19 +61,36 @@ void Server::start()
 
 		std::cerr << "New client connected!" << std::endl;
 
-		m_stream << "Ready to repeat everything you say (one line at a time)! Type STOP to exit." << std::endl;
+		m_stream << "+OK POP3 server ready" << std::endl;
 
 		// On passe à l'état suivant de la communication.
-		m_currentState = State::TALKING_TO_USER;
+		// m_currentState = State::TALKING_TO_USER;
 
 		// On lit une ligne par une ligne tant qu'on peut.
 		while (m_stream && m_currentState != State::QUITTING) {
-			std::string line;
-			std::getline(m_stream, line);
+
+			RequestFactory * reqFact = new RequestFactory();
+			Request* req = reqFact->parseRequest(m_stream, m_currentState);
+
+			if (req) {
+				req->dispatch(*this);
+				delete req;      // Requête créée dans requestFactory avec parseRequest
+				req = nullptr;
+			}
+
+			delete reqFact;
+			reqFact = nullptr;
+
+		
 			// On a une seule façon de traiter les requêtes ici.
 			// La méthode process est susceptible de déclencher une
 			// transition vers un autre état du protocole.
-			m_stream << process(line) << std::endl;
+			//process(line);
+			/* VERIF MESSAGES
+			std::vector<Message> messages = boiteAuxLettres.sgetAllMessages();
+			for(Message& msg : messages){
+				std::cout << msg << std::endl;
+			}*/
 		}
 
 		// Si l'état est QUITTING, cela signifie que l'on a quitté la
@@ -74,13 +116,180 @@ void Server::start()
 	}
 }
 
-// Fonction de traitement de n'importe quel message du client, très basique.
-std::string Server::process(const std::string& req)
+// Fonction gérant les erreurs d'une requête invalide
+void Server::handleRequest(Request& req)
 {
-	if (req.substr(0,4) == "STOP") {
-		m_currentState = State::QUITTING;
-		return "bye!";
-	} else {
-		return req;
+	Response response = Response(req);
+	std::cout << response << std::endl;
+
+}
+
+void Server::handleRequest(RequestUser& req)
+{
+	// Ici on accepte tous les noms d'utilisateur (la validité de la requête est vérifiée dans RequestFactory)
+	std::cout << "+OK User accepted" << std::endl;
+	m_currentState = State::WAITING_FOR_PASSWORD;
+}
+
+void Server::handleRequest(RequestPass& req)
+{
+	// Ici on accepte tous les mots de passe (la validité de la requête est vérifiée dans RequestFactory)
+	std::cout << "+OK Password accepted" << std::endl;
+	m_currentState = State::TALKING_TO_USER;
+}
+
+void Server::handleRequest(RequestQuit& req)
+{
+	boiteAuxLettres.deleteMessage();
+	Response response = Response(req);
+	std::cout << response << std::endl;
+	m_currentState = State::QUITTING;
+}
+
+void Server::handleRequest(RequestDele& req)
+{
+	// Récupérer l'ID du message à supprimer depuis la requête
+	std::vector<std::string> args = req.getArguments();
+	int messageId = std::stoi(args[0]);
+	Message * msgToDelete = boiteAuxLettres.getMessageById(messageId);
+	if (msgToDelete != nullptr && !msgToDelete->isToBeDeleted()) {
+		msgToDelete->markToBeDeleted();
+
+		// Le message a été marqué pour suppression, on envoie une réponse positive
+		Response response = Response(req);
+		std::cout << response << std::endl;
 	}
+	// Si le message n'existe pas, on envoie une réponse d'erreur bien que la requête soit considérée comme valide
+	else {
+		std::cout << "-ERR. Message with ID " << messageId << " not found." << std::endl;
+	}
+}
+
+void Server::handleRequest(RequestList& req)
+{
+	const std::vector<Message>& messages = boiteAuxLettres.getAllMessages();
+	if(req.getArguments().size() == 0){	
+
+		std::pair<int, int> stats = boiteAuxLettres.countSize();
+		std::cout << "+OK " << stats.first << " (" << stats.second << " octets)" << std::endl;
+		for(const Message& msg : messages){
+			if(!msg.isToBeDeleted()) {
+				std::cout << msg.getId() << " " << msg.getSize() << std::endl;
+			}
+		}
+		std::cout << "." << std::endl;
+	}
+	else if(req.getArguments().size() == 1){
+		int requestedId = std::stoi(req.getArguments()[0]);
+		Message* msg = boiteAuxLettres.getMessageById(requestedId);
+		if(msg != nullptr && !msg->isToBeDeleted()){
+			std::cout << "+OK " << requestedId << " " << msg->getSize() << std::endl;
+		}
+		else {
+			std::cout << "-ERR. No such message" << std::endl;
+		}
+	}
+}
+
+void Server::handleRequest(RequestStat& req)
+{
+	if(req.getArguments().size() == 0){	
+		std::pair<int, int> stats = boiteAuxLettres.countSize();
+		std::cout << "+OK " << stats.first << " "<< stats.second << std::endl;
+	}
+	else {
+		Response response = Response(req);
+		std::cout << response << std::endl;
+	}
+}
+
+void Server::handleRequest(RequestRetr& req)
+{
+	if(req.getArguments().size() == 1) {
+		int requestedId = std::stoi(req.getArguments()[0]);
+		Message * msg = boiteAuxLettres.getMessageById(requestedId);
+		if(msg != nullptr && !msg->isToBeDeleted()){
+			std::cout << "+OK " << msg->getSize() << " octets" << std::endl;
+			std::cout << *msg << std::endl;
+		}
+		else {
+			std::cout << "-ERR. No such message" << std::endl;
+		}
+	}
+}
+
+void Server::handleRequest(RequestNoop& req)
+{
+	Response response = Response(req);
+	std::cout << response << std::endl;
+}
+
+void Server::handleRequest(RequestRst& req)
+{
+	std::vector<Message>& messages = boiteAuxLettres.getAllMessages();
+	for(Message& msg : messages){
+		if(msg.isToBeDeleted()) {
+			msg.doNotDelete();
+		}
+	}
+	std::pair<int, int> stats = boiteAuxLettres.countSize();
+	std::cout << "+OK, maildrop has " << stats.first << " messages (" << stats.second << " octets)" << std::endl;
+}
+
+void Server::handleRequest(RequestTop& req)
+{
+	if(req.getArguments().size() == 2) {
+		int requestedId = std::stoi(req.getArguments()[0]);
+		int numLines = std::stoi(req.getArguments()[1]);
+		Message * msg = boiteAuxLettres.getMessageById(requestedId);
+		if(msg != nullptr && !msg->isToBeDeleted()){
+			if(numLines < 0) {
+				std::cout << "-ERR number of lines must be positive" << std::endl;
+				return;
+			}
+			std::cout << "+OK" << std::endl;
+			std::cout << "Subject: " << msg->getSubject() << std::endl;
+			std::cout << "From: " << msg->getExpeditor() << std::endl;
+			std::cout << "Date: " << msg->affichageHorodatage(msg->getDate()) << std::endl;
+			std::cout << std::endl;
+
+			// Afficher les premières lignes du contenu
+			std::istringstream contentStream(msg->getContent());
+			std::string line;
+			int lineCount = 0;
+			while (std::getline(contentStream, line) && lineCount < numLines) {
+				std::cout << line << std::endl;
+				lineCount++;
+			}
+			std::cout << "." << std::endl; // Fin de la réponse
+		}
+		else {
+			std::cout << "-ERR. No such message" << std::endl;
+		}
+	}
+}
+
+void Server::handleRequest(RequestUidl& req)
+{
+	if (req.getArguments().size() == 0) {
+		std::vector<Message>& messages = boiteAuxLettres.getAllMessages();
+		std::cout << "+OK" << std::endl;
+		for(Message& msg : messages){
+			if(!msg.isToBeDeleted()){
+				std::cout << msg.getId() << " " << msg.getUidl() << msg.getUidl() << std::endl;
+			}
+		}
+		std::cout << "." << std::endl;
+	}
+	else if (req.getArguments().size() == 1) {
+		int requestedId = std::stoi(req.getArguments()[0]);
+		Message * msg = boiteAuxLettres.getMessageById(requestedId);
+		if(msg != nullptr && !msg->isToBeDeleted()){
+			std::cout << "+OK " << msg->getId() << " " << msg->getUidl() << std::endl;
+		}
+		else {
+			std::cout << "-ERR. No such message" << std::endl;
+		}
+	}
+	
 }

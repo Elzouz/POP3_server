@@ -1,17 +1,21 @@
 #ifndef RESPONSE_H
-#define RESPONSE_H  
-#include <iostream>
+#define RESPONSE_H
+
 #include <string>
 #include "Request.h"
 
-class Response{
+class Response
+{
 private:
-    std::string message;
+    std::string resp;
+    Request& req;
 public:
-    std::string getMessage() const;
-    void setMessage(Request& req);
+    Response(Request& request);
+
+    void setResponse();
+    std::string getResp() const;
 };
-  
+
 std::ostream& operator<<(std::ostream& os, const Response& r);
 
 #endif

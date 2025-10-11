@@ -4,28 +4,46 @@
 #include <iostream>
 #include <vector>
 
-#include "Server.h"
+// Cas "STOP"
+// Cas \r\n gérer le \r ne pas le prendre dans le message 
+// Cas . fin de message sur plusieurs lignes (.. si déjà .)
+// >> fin d'un message plusieurs lignes : \r\n.\r\n
 
-class Request{
-public : 
-    enum class Command{
-            USER,
-            PASS,
-            STAT,
-            LIST,
-            RETR,
-            DELE,
-            INVALID
-        };
+class Server;
 
+class Request
+{
+public:
+    enum class Command
+    {
+        QUIT,
+        USER,
+        PASS,
+        STAT,
+        LIST,
+        RETR,
+        DELE,
+        NOOP,
+        RSET,
+        TOP,
+        UIDL,
+        INVALID
+    };
+    
 private:
     Command command;
+    std::vector<std::string> arguments;
+    std::string description;
 
-public:
-    std::string parseRequest(std::istream& req);
+public :
+    Request(Command command, std::vector<std::string> arguments = {}, std::string description = "");
+    virtual ~Request() = default;
     Command getCommand();
+    std::vector<std::string> getArguments();
+    std::string getDescription();
 
-    void dispatch(Server); // A quoi ça sert ??
+    virtual void dispatch(Server& s); //polymorphisme dynamique
 };
+
 
 #endif

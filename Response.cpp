@@ -1,22 +1,26 @@
-#include <iostream>
 #include "Response.h"
 #include "Request.h"
 
-std::string Response::getMessage() const{
-    return message;
+Response::Response(Request& request) :
+    req{request}
+{
+    setResponse();
 }
 
-void Response::setMessage(Request& req){
-   if(req.getCommand() == Request::Command::INVALID){
-        message = "-ERR\r\n";
-   }
-   else{
-        message = "+OK\r\n";
-   }
+std::string Response::getResp() const
+{
+    return resp;
 }
 
-std::ostream& operator<<(std::ostream& os, const Response& r){
-    os << r.getMessage() << "\n";
-    return os;
+void Response::setResponse()
+{
+    Request::Command cmd = req.getCommand();
+    if (cmd == Request::Command::INVALID) resp = "-ERR " + req.getDescription();
+    else resp = "+OK " + req.getDescription();
 }
 
+std::ostream& operator<<(std::ostream& os, const Response& r)
+{
+    os << r.getResp();
+  return os;
+}
